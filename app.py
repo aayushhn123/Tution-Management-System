@@ -9,18 +9,16 @@ st.set_page_config(
     page_title="Tuition Tracker",
     page_icon="📚",
     layout="wide",
-    initial_sidebar_state="collapsed"  # Better for mobile
+    initial_sidebar_state="collapsed"
 )
 
 # Custom CSS for mobile-friendly UI
 st.markdown("""
 <style>
-    /* Larger text for readability */
     .stMarkdown, .stText {
         font-size: 18px !important;
     }
     
-    /* Bigger buttons */
     .stButton > button {
         height: 60px !important;
         font-size: 20px !important;
@@ -30,7 +28,6 @@ st.markdown("""
         margin: 5px 0 !important;
     }
     
-    /* Larger input fields */
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
     .stSelectbox > div > div > select,
@@ -44,7 +41,6 @@ st.markdown("""
         height: 100px !important;
     }
     
-    /* Larger checkboxes */
     .stCheckbox {
         font-size: 18px !important;
     }
@@ -53,7 +49,6 @@ st.markdown("""
         font-size: 18px !important;
     }
     
-    /* Better spacing for mobile */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
@@ -61,7 +56,6 @@ st.markdown("""
         padding-right: 1rem !important;
     }
     
-    /* Larger metrics */
     [data-testid="stMetricValue"] {
         font-size: 28px !important;
     }
@@ -70,38 +64,40 @@ st.markdown("""
         font-size: 18px !important;
     }
     
-    /* Date picker styling */
     .stDateInput > div > div > input {
         font-size: 18px !important;
         height: 55px !important;
     }
     
-    /* Radio buttons */
     .stRadio > label {
         font-size: 18px !important;
     }
     
-    /* Expander text */
     .streamlit-expanderHeader {
         font-size: 18px !important;
         font-weight: bold !important;
     }
     
-    /* Success/Error messages */
     .stSuccess, .stError, .stWarning, .stInfo {
         font-size: 18px !important;
         padding: 15px !important;
     }
     
-    /* Tab styling */
     .stTabs [data-baseweb="tab-list"] button {
         font-size: 18px !important;
         padding: 15px 20px !important;
     }
     
-    /* Divider spacing */
     hr {
         margin: 20px 0 !important;
+    }
+    
+    /* Day card styling */
+    .day-card {
+        background-color: #f0f2f6;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -139,16 +135,34 @@ def load_data():
     except FileNotFoundError:
         pass
 
+def get_time_for_day(student, day_name):
+    """Get the time slot for a specific day"""
+    if isinstance(student.get('time_slot'), dict):
+        return student['time_slot'].get(day_name, "Not scheduled")
+    else:
+        # Backward compatibility: if time_slot is a string, return it for all days
+        return student.get('time_slot', "Not scheduled")
+
 def get_students_for_day(day_name, check_date=None):
     """Get students scheduled for a specific day"""
-    base_students = [s for s in st.session_state.students if day_name in s['days']]
+    # Get base students for this day
+    base_students = []
+    for s in st.session_state.students:
+        # Handle both old format (list) and new format (dict)
+        if isinstance(s.get('time_slot'), dict):
+            if day_name in s['time_slot']:
+                base_students.append(s)
+        else:
+            # Old format compatibility
+            if day_name in s.get('days', []):
+                base_students.append(s)
     
     if check_date:
         date_str = str(check_date)
         
         # Add rescheduled TO this date
         rescheduled_to = [
-            next(s for s in st.session_state.students if s['id'] == r['student_id'])
+            next(st for st in st.session_state.students if st['id'] == r['student_id'])
             for r in st.session_state.reschedules
             if r['new_date'] == date_str and r['status'] == 'active'
         ]
@@ -208,7 +222,6 @@ if st.session_state.page == "home":
     today = datetime.now().strftime("%A")
     today_date = date.today()
     
-    # Show today's date prominently
     st.info(f"📆 {today_date.strftime('%d %B %Y')} ({today})")
     
     today_students = get_students_for_day(today, today_date)
@@ -217,7 +230,6 @@ if st.session_state.page == "home":
         st.subheader(f"Total {len(today_students)} Classes Today")
         
         for student in today_students:
-            # Card-like container for each student
             with st.container():
                 st.markdown(f"### 👨‍🎓 {student['name']}")
                 st.markdown(f"**Grade:** {student['grade']}")
@@ -234,7 +246,8 @@ if st.session_state.page == "home":
                     st.markdown(f"**Time:** {reschedule['new_time']} 🔄")
                     st.warning(f"Rescheduled from {reschedule['original_date']}")
                 else:
-                    st.markdown(f"**Time:** {student['time_slot']}")
+                    time_slot = get_time_for_day(student, today)
+                    st.markdown(f"**Time:** {time_slot}")
                 
                 st.markdown(f"**Fee:** ₹{student['monthly_fee']}")
                 
@@ -275,24 +288,37 @@ elif st.session_state.page == "add_student":
         
         subject = st.text_input("Subject *", placeholder="Example: Math, Science")
         
-        time_slot = st.text_input("Time *", placeholder="Example: 4:00 PM - 5:00 PM")
-        
         monthly_fee = st.number_input("Monthly Fee (₹) *", min_value=0, step=100, value=0)
         
         contact = st.text_input("Phone Number (Optional)", placeholder="Example: 9876543210")
         
         st.markdown("---")
-        st.subheader("Which Days? *")
-        st.caption("Select the days when class is scheduled")
+        st.subheader("Schedule (Days & Time) *")
+        st.caption("Select days and set time for each day")
         
-        days = []
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         
-        for day in day_names:
-            if st.checkbox(f"{day}", key=f"day_{day}"):
-                days.append(day)
+        # Dictionary to store time slots for each day
+        schedule = {}
         
-        st.markdown("---")
+        for day in day_names:
+            st.markdown(f"#### {day}")
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                is_scheduled = st.checkbox(f"Schedule", key=f"day_{day}")
+            
+            with col2:
+                if is_scheduled:
+                    time_slot = st.text_input(
+                        "Time",
+                        placeholder="e.g., 4:00 PM - 5:00 PM",
+                        key=f"time_{day}"
+                    )
+                    if time_slot:
+                        schedule[day] = time_slot
+            
+            st.markdown("---")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -305,14 +331,13 @@ elif st.session_state.page == "add_student":
             st.rerun()
         
         if submitted:
-            if name and grade and subject and time_slot and monthly_fee > 0 and days:
+            if name and grade and subject and monthly_fee > 0 and schedule:
                 new_student = {
                     'id': len(st.session_state.students) + 1 if st.session_state.students else 1,
                     'name': name,
                     'grade': grade,
                     'subject': subject,
-                    'days': days,
-                    'time_slot': time_slot,
+                    'time_slot': schedule,  # Now a dictionary: {day: time}
                     'monthly_fee': monthly_fee,
                     'contact': contact,
                     'fees_paid': []
@@ -325,7 +350,7 @@ elif st.session_state.page == "add_student":
                     st.session_state.page = "home"
                     st.rerun()
             else:
-                st.error("⚠️ Please fill all required fields!")
+                st.error("⚠️ Please fill all required fields and schedule at least one day!")
 
 # ATTENDANCE
 elif st.session_state.page == "attendance":
@@ -357,7 +382,8 @@ elif st.session_state.page == "attendance":
                 if reschedule:
                     st.markdown(f"**Time:** {reschedule['new_time']} 🔄")
                 else:
-                    st.markdown(f"**Time:** {student['time_slot']}")
+                    time_slot = get_time_for_day(student, day_name)
+                    st.markdown(f"**Time:** {time_slot}")
                 
                 # Check existing attendance
                 existing_attendance = next(
@@ -377,12 +403,10 @@ elif st.session_state.page == "attendance":
                                 key=f"present_{student['id']}_{selected_date}",
                                 type=present_type,
                                 use_container_width=True):
-                        # Remove existing record
                         st.session_state.attendance = [
                             a for a in st.session_state.attendance 
                             if not (a['student_id'] == student['id'] and a['date'] == str(selected_date))
                         ]
-                        # Add new record
                         st.session_state.attendance.append({
                             'student_id': student['id'],
                             'student_name': student['name'],
@@ -399,12 +423,10 @@ elif st.session_state.page == "attendance":
                                 key=f"absent_{student['id']}_{selected_date}",
                                 type=absent_type,
                                 use_container_width=True):
-                        # Remove existing record
                         st.session_state.attendance = [
                             a for a in st.session_state.attendance 
                             if not (a['student_id'] == student['id'] and a['date'] == str(selected_date))
                         ]
-                        # Add new record
                         st.session_state.attendance.append({
                             'student_id': student['id'],
                             'student_name': student['name'],
@@ -435,7 +457,6 @@ elif st.session_state.page == "fees":
     st.subheader(f"📅 {month_name} {current_year}")
     
     if st.session_state.students:
-        # Calculate totals
         total_expected = sum(float(s['monthly_fee']) for s in st.session_state.students)
         total_received = sum(
             float(s['monthly_fee']) 
@@ -444,7 +465,6 @@ elif st.session_state.page == "fees":
         )
         total_pending = total_expected - total_received
         
-        # Show summary
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total", f"₹{total_expected:,.0f}")
@@ -455,7 +475,6 @@ elif st.session_state.page == "fees":
         
         st.markdown("---")
         
-        # Show each student
         for student in st.session_state.students:
             with st.container():
                 st.markdown(f"### 👨‍🎓 {student['name']}")
@@ -496,7 +515,6 @@ elif st.session_state.page == "reschedule":
         with st.form("reschedule_form", clear_on_submit=True):
             st.subheader("Select Student")
             
-            # Create simple dropdown with student names
             student_names = [f"{s['name']} - {s['grade']}" for s in st.session_state.students]
             selected_index = st.selectbox(
                 "Student *",
@@ -507,7 +525,14 @@ elif st.session_state.page == "reschedule":
             student = st.session_state.students[selected_index]
             
             # Show regular schedule
-            st.info(f"Regular Days: {', '.join(student['days'])}\n\nTime: {student['time_slot']}")
+            schedule_info = "Regular Schedule:\n\n"
+            if isinstance(student['time_slot'], dict):
+                for day, time in student['time_slot'].items():
+                    schedule_info += f"• {day}: {time}\n"
+            else:
+                schedule_info += f"Days: {', '.join(student.get('days', []))}\nTime: {student['time_slot']}"
+            
+            st.info(schedule_info)
             
             st.markdown("---")
             st.subheader("Select Dates")
@@ -526,7 +551,7 @@ elif st.session_state.page == "reschedule":
             
             new_time = st.text_input(
                 "New Time (Optional)",
-                placeholder="Leave empty or enter new time"
+                placeholder="Leave empty to use regular time"
             )
             
             reason = st.text_area(
@@ -548,13 +573,17 @@ elif st.session_state.page == "reschedule":
             
             if submitted:
                 if original_date and new_date:
+                    # Get the original time for the day
+                    original_day = original_date.strftime("%A")
+                    default_time = get_time_for_day(student, original_day)
+                    
                     new_reschedule = {
                         'id': len(st.session_state.reschedules) + 1,
                         'student_id': student['id'],
                         'student_name': student['name'],
                         'original_date': str(original_date),
                         'new_date': str(new_date),
-                        'new_time': new_time if new_time else student['time_slot'],
+                        'new_time': new_time if new_time else default_time,
                         'reason': reason,
                         'status': 'active',
                         'created_at': datetime.now().isoformat()
@@ -584,8 +613,17 @@ elif st.session_state.page == "students":
                 st.markdown(f"### 👨‍🎓 {student['name']}")
                 st.markdown(f"**Grade:** {student['grade']}")
                 st.markdown(f"**Subject:** {student['subject']}")
-                st.markdown(f"**Days:** {', '.join(student['days'])}")
-                st.markdown(f"**Time:** {student['time_slot']}")
+                
+                # Display schedule
+                if isinstance(student['time_slot'], dict):
+                    st.markdown("**Schedule:**")
+                    for day, time in student['time_slot'].items():
+                        st.markdown(f"• {day}: {time}")
+                else:
+                    # Old format compatibility
+                    st.markdown(f"**Days:** {', '.join(student.get('days', []))}")
+                    st.markdown(f"**Time:** {student['time_slot']}")
+                
                 st.markdown(f"**Monthly Fee:** ₹{student['monthly_fee']}")
                 if student['contact']:
                     st.markdown(f"**Phone:** {student['contact']}")
