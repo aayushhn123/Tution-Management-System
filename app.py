@@ -92,12 +92,18 @@ st.markdown("""
         margin: 20px 0 !important;
     }
     
-    /* Day card styling */
-    .day-card {
+    /* Day selection boxes */
+    .day-box {
         background-color: #f0f2f6;
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
+        padding: 20px;
+        border-radius: 15px;
+        margin: 15px 0;
+        border: 3px solid #e0e0e0;
+    }
+    
+    .day-box-selected {
+        background-color: #d4edda;
+        border: 3px solid #28a745;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -109,6 +115,8 @@ if 'attendance' not in st.session_state:
     st.session_state.attendance = []
 if 'reschedules' not in st.session_state:
     st.session_state.reschedules = []
+if 'selected_days' not in st.session_state:
+    st.session_state.selected_days = {}
 
 # Helper functions
 def save_data():
@@ -140,34 +148,28 @@ def get_time_for_day(student, day_name):
     if isinstance(student.get('time_slot'), dict):
         return student['time_slot'].get(day_name, "Not scheduled")
     else:
-        # Backward compatibility: if time_slot is a string, return it for all days
         return student.get('time_slot', "Not scheduled")
 
 def get_students_for_day(day_name, check_date=None):
     """Get students scheduled for a specific day"""
-    # Get base students for this day
     base_students = []
     for s in st.session_state.students:
-        # Handle both old format (list) and new format (dict)
         if isinstance(s.get('time_slot'), dict):
             if day_name in s['time_slot']:
                 base_students.append(s)
         else:
-            # Old format compatibility
             if day_name in s.get('days', []):
                 base_students.append(s)
     
     if check_date:
         date_str = str(check_date)
         
-        # Add rescheduled TO this date
         rescheduled_to = [
             next(st for st in st.session_state.students if st['id'] == r['student_id'])
             for r in st.session_state.reschedules
             if r['new_date'] == date_str and r['status'] == 'active'
         ]
         
-        # Remove rescheduled FROM this date
         rescheduled_from_ids = [
             r['student_id'] for r in st.session_state.reschedules
             if r['original_date'] == date_str and r['status'] == 'active'
@@ -198,6 +200,7 @@ with col1:
         st.session_state.page = "home"
     if st.button("➕ Add Student", use_container_width=True):
         st.session_state.page = "add_student"
+        st.session_state.selected_days = {}
     if st.button("✅ Attendance", use_container_width=True):
         st.session_state.page = "attendance"
 
@@ -235,7 +238,6 @@ if st.session_state.page == "home":
                 st.markdown(f"**Grade:** {student['grade']}")
                 st.markdown(f"**Subject:** {student['subject']}")
                 
-                # Check if rescheduled
                 reschedule = next(
                     (r for r in st.session_state.reschedules 
                      if r['student_id'] == student['id'] and r['new_date'] == str(today_date) and r['status'] == 'active'),
@@ -255,7 +257,6 @@ if st.session_state.page == "home":
     else:
         st.success("🎉 No classes today!")
     
-    # Quick stats
     st.markdown("---")
     st.subheader("📊 This Month")
     
@@ -279,78 +280,95 @@ if st.session_state.page == "home":
 elif st.session_state.page == "add_student":
     st.header("➕ Add New Student")
     
-    with st.form("student_form", clear_on_submit=True):
-        st.subheader("Student Details")
+    st.subheader("📝 Basic Details")
+    
+    name = st.text_input("Name *", placeholder="Example: Rahul Sharma")
+    
+    grade = st.text_input("Grade *", placeholder="Example: 8th, 10th")
+    
+    subject = st.text_input("Subject *", placeholder="Example: Math, Science")
+    
+    monthly_fee = st.number_input("Monthly Fee (₹) *", min_value=0, step=100, value=0)
+    
+    contact = st.text_input("Phone Number (Optional)", placeholder="Example: 9876543210")
+    
+    st.markdown("---")
+    st.subheader("📅 Select Class Days & Times")
+    st.caption("Tap on days when class is scheduled")
+    
+    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    
+    # Display days as big buttons
+    for day in day_names:
+        is_selected = day in st.session_state.selected_days
         
-        name = st.text_input("Name *", placeholder="Example: Rahul Sharma")
+        col1, col2 = st.columns([2, 3])
         
-        grade = st.text_input("Grade *", placeholder="Example: 8th, 10th")
-        
-        subject = st.text_input("Subject *", placeholder="Example: Math, Science")
-        
-        monthly_fee = st.number_input("Monthly Fee (₹) *", min_value=0, step=100, value=0)
-        
-        contact = st.text_input("Phone Number (Optional)", placeholder="Example: 9876543210")
-        
-        st.markdown("---")
-        st.subheader("Schedule (Days & Time) *")
-        st.caption("Select days and set time for each day")
-        
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        
-        # Dictionary to store time slots for each day
-        schedule = {}
-        
-        for day in day_names:
-            st.markdown(f"#### {day}")
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                is_scheduled = st.checkbox(f"Schedule", key=f"day_{day}")
-            
-            with col2:
-                if is_scheduled:
-                    time_slot = st.text_input(
-                        "Time",
-                        placeholder="e.g., 4:00 PM - 5:00 PM",
-                        key=f"time_{day}"
-                    )
-                    if time_slot:
-                        schedule[day] = time_slot
-            
-            st.markdown("---")
-        
-        col1, col2 = st.columns(2)
         with col1:
-            submitted = st.form_submit_button("✅ Add Student", use_container_width=True)
+            button_label = f"{'✅' if is_selected else '⬜'} {day}"
+            if st.button(button_label, key=f"btn_{day}", use_container_width=True):
+                if day in st.session_state.selected_days:
+                    del st.session_state.selected_days[day]
+                else:
+                    st.session_state.selected_days[day] = ""
+                st.rerun()
+        
         with col2:
-            cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
-        
-        if cancelled:
-            st.session_state.page = "home"
-            st.rerun()
-        
-        if submitted:
+            if is_selected:
+                time_input = st.text_input(
+                    "Time",
+                    value=st.session_state.selected_days[day],
+                    placeholder="e.g., 4:00 PM - 5:00 PM",
+                    key=f"time_{day}",
+                    label_visibility="collapsed"
+                )
+                st.session_state.selected_days[day] = time_input
+    
+    st.markdown("---")
+    
+    # Show selected schedule
+    if st.session_state.selected_days:
+        st.info(f"✅ Selected {len(st.session_state.selected_days)} days")
+        for day, time in st.session_state.selected_days.items():
+            if time:
+                st.caption(f"• {day}: {time}")
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("✅ Add Student", type="primary", use_container_width=True):
+            # Validate inputs
+            schedule = {day: time for day, time in st.session_state.selected_days.items() if time.strip()}
+            
             if name and grade and subject and monthly_fee > 0 and schedule:
                 new_student = {
                     'id': len(st.session_state.students) + 1 if st.session_state.students else 1,
                     'name': name,
                     'grade': grade,
                     'subject': subject,
-                    'time_slot': schedule,  # Now a dictionary: {day: time}
+                    'time_slot': schedule,
                     'monthly_fee': monthly_fee,
                     'contact': contact,
                     'fees_paid': []
                 }
                 st.session_state.students.append(new_student)
                 save_data()
+                st.session_state.selected_days = {}
                 st.success(f"✅ {name} added successfully!")
                 st.balloons()
-                if st.button("🏠 Go to Home"):
+                if st.button("🏠 Go to Home", use_container_width=True):
                     st.session_state.page = "home"
                     st.rerun()
             else:
-                st.error("⚠️ Please fill all required fields and schedule at least one day!")
+                st.error("⚠️ Please fill all fields and add time for selected days!")
+    
+    with col2:
+        if st.button("❌ Cancel", use_container_width=True):
+            st.session_state.selected_days = {}
+            st.session_state.page = "home"
+            st.rerun()
 
 # ATTENDANCE
 elif st.session_state.page == "attendance":
@@ -372,7 +390,6 @@ elif st.session_state.page == "attendance":
                 st.markdown(f"**Grade:** {student['grade']}")
                 st.markdown(f"**Subject:** {student['subject']}")
                 
-                # Check if rescheduled
                 reschedule = next(
                     (r for r in st.session_state.reschedules 
                      if r['student_id'] == student['id'] and r['new_date'] == str(selected_date) and r['status'] == 'active'),
@@ -385,7 +402,6 @@ elif st.session_state.page == "attendance":
                     time_slot = get_time_for_day(student, day_name)
                     st.markdown(f"**Time:** {time_slot}")
                 
-                # Check existing attendance
                 existing_attendance = next(
                     (a for a in st.session_state.attendance 
                      if a['student_id'] == student['id'] and a['date'] == str(selected_date)),
@@ -394,7 +410,6 @@ elif st.session_state.page == "attendance":
                 
                 current_status = existing_attendance['status'] if existing_attendance else None
                 
-                # Big attendance buttons
                 col1, col2 = st.columns(2)
                 
                 with col1:
@@ -512,92 +527,86 @@ elif st.session_state.page == "reschedule":
     st.header("🔄 Reschedule Class")
     
     if st.session_state.students:
-        with st.form("reschedule_form", clear_on_submit=True):
-            st.subheader("Select Student")
-            
-            student_names = [f"{s['name']} - {s['grade']}" for s in st.session_state.students]
-            selected_index = st.selectbox(
-                "Student *",
-                range(len(student_names)),
-                format_func=lambda x: student_names[x]
-            )
-            
-            student = st.session_state.students[selected_index]
-            
-            # Show regular schedule
-            schedule_info = "Regular Schedule:\n\n"
-            if isinstance(student['time_slot'], dict):
-                for day, time in student['time_slot'].items():
-                    schedule_info += f"• {day}: {time}\n"
-            else:
-                schedule_info += f"Days: {', '.join(student.get('days', []))}\nTime: {student['time_slot']}"
-            
-            st.info(schedule_info)
-            
-            st.markdown("---")
-            st.subheader("Select Dates")
-            
-            original_date = st.date_input(
-                "Original Date *",
-                min_value=date.today(),
-                help="The date to reschedule from"
-            )
-            
-            new_date = st.date_input(
-                "New Date *",
-                min_value=date.today(),
-                help="The new date for the class"
-            )
-            
-            new_time = st.text_input(
-                "New Time (Optional)",
-                placeholder="Leave empty to use regular time"
-            )
-            
-            reason = st.text_area(
-                "Reason (Optional)",
-                placeholder="Example: Holiday, Student sick, etc."
-            )
-            
-            st.markdown("---")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                submitted = st.form_submit_button("✅ Reschedule", use_container_width=True)
-            with col2:
-                cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
-            
-            if cancelled:
+        st.subheader("1️⃣ Select Student")
+        
+        student_names = [f"{s['name']} - {s['grade']}" for s in st.session_state.students]
+        selected_index = st.selectbox(
+            "Choose student",
+            range(len(student_names)),
+            format_func=lambda x: student_names[x],
+            label_visibility="collapsed"
+        )
+        
+        student = st.session_state.students[selected_index]
+        
+        # Show schedule
+        st.info("📅 Regular Schedule:")
+        if isinstance(student['time_slot'], dict):
+            for day, time in student['time_slot'].items():
+                st.caption(f"• {day}: {time}")
+        else:
+            st.caption(f"Days: {', '.join(student.get('days', []))}, Time: {student['time_slot']}")
+        
+        st.markdown("---")
+        st.subheader("2️⃣ Select Dates")
+        
+        original_date = st.date_input(
+            "From Date (Original) *",
+            min_value=date.today(),
+            help="Which class to reschedule"
+        )
+        
+        new_date = st.date_input(
+            "To Date (New) *",
+            min_value=date.today(),
+            help="New date for the class"
+        )
+        
+        st.markdown("---")
+        st.subheader("3️⃣ New Time (Optional)")
+        
+        new_time = st.text_input(
+            "Enter new time or leave empty",
+            placeholder="e.g., 5:00 PM - 6:00 PM"
+        )
+        
+        reason = st.text_area(
+            "Reason (Optional)",
+            placeholder="Holiday, Sick, etc."
+        )
+        
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("✅ Reschedule", type="primary", use_container_width=True):
+                original_day = original_date.strftime("%A")
+                default_time = get_time_for_day(student, original_day)
+                
+                new_reschedule = {
+                    'id': len(st.session_state.reschedules) + 1,
+                    'student_id': student['id'],
+                    'student_name': student['name'],
+                    'original_date': str(original_date),
+                    'new_date': str(new_date),
+                    'new_time': new_time if new_time else default_time,
+                    'reason': reason,
+                    'status': 'active',
+                    'created_at': datetime.now().isoformat()
+                }
+                st.session_state.reschedules.append(new_reschedule)
+                save_data()
+                st.success(f"✅ Class rescheduled!")
+                st.balloons()
+        
+        with col2:
+            if st.button("❌ Cancel", use_container_width=True):
                 st.session_state.page = "home"
                 st.rerun()
-            
-            if submitted:
-                if original_date and new_date:
-                    # Get the original time for the day
-                    original_day = original_date.strftime("%A")
-                    default_time = get_time_for_day(student, original_day)
-                    
-                    new_reschedule = {
-                        'id': len(st.session_state.reschedules) + 1,
-                        'student_id': student['id'],
-                        'student_name': student['name'],
-                        'original_date': str(original_date),
-                        'new_date': str(new_date),
-                        'new_time': new_time if new_time else default_time,
-                        'reason': reason,
-                        'status': 'active',
-                        'created_at': datetime.now().isoformat()
-                    }
-                    st.session_state.reschedules.append(new_reschedule)
-                    save_data()
-                    st.success(f"✅ Class rescheduled!")
-                    st.balloons()
-                    if st.button("🏠 Go to Home"):
-                        st.session_state.page = "home"
-                        st.rerun()
     else:
         st.info("Add students first")
-        if st.button("➕ Add Student"):
+        if st.button("➕ Add Student", use_container_width=True):
             st.session_state.page = "add_student"
             st.rerun()
 
@@ -615,14 +624,13 @@ elif st.session_state.page == "students":
                 st.markdown(f"**Subject:** {student['subject']}")
                 
                 # Display schedule
+                st.markdown("**Schedule:**")
                 if isinstance(student['time_slot'], dict):
-                    st.markdown("**Schedule:**")
                     for day, time in student['time_slot'].items():
-                        st.markdown(f"• {day}: {time}")
+                        st.caption(f"• {day}: {time}")
                 else:
-                    # Old format compatibility
-                    st.markdown(f"**Days:** {', '.join(student.get('days', []))}")
-                    st.markdown(f"**Time:** {student['time_slot']}")
+                    st.caption(f"Days: {', '.join(student.get('days', []))}")
+                    st.caption(f"Time: {student['time_slot']}")
                 
                 st.markdown(f"**Monthly Fee:** ₹{student['monthly_fee']}")
                 if student['contact']:
@@ -643,7 +651,7 @@ elif st.session_state.page == "students":
                 st.markdown("---")
     else:
         st.info("No students added yet")
-        if st.button("➕ Add Student"):
+        if st.button("➕ Add Student", use_container_width=True):
             st.session_state.page = "add_student"
             st.rerun()
 
