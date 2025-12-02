@@ -180,19 +180,19 @@ st.title("📚 My Tuition Classes")
 # Big, clear navigation buttons
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("🏠 आज की कक्षाएं\nToday's Classes", use_container_width=True):
+    if st.button("🏠 Today's Classes", use_container_width=True):
         st.session_state.page = "home"
-    if st.button("➕ छात्र जोड़ें\nAdd Student", use_container_width=True):
+    if st.button("➕ Add Student", use_container_width=True):
         st.session_state.page = "add_student"
-    if st.button("✅ हाजिरी\nAttendance", use_container_width=True):
+    if st.button("✅ Attendance", use_container_width=True):
         st.session_state.page = "attendance"
 
 with col2:
-    if st.button("💰 फीस\nFees", use_container_width=True):
+    if st.button("💰 Fees", use_container_width=True):
         st.session_state.page = "fees"
-    if st.button("🔄 क्लास बदलें\nReschedule", use_container_width=True):
+    if st.button("🔄 Reschedule", use_container_width=True):
         st.session_state.page = "reschedule"
-    if st.button("📋 सभी छात्र\nAll Students", use_container_width=True):
+    if st.button("📋 All Students", use_container_width=True):
         st.session_state.page = "students"
 
 # Initialize page
@@ -203,7 +203,7 @@ st.markdown("---")
 
 # HOME / TODAY'S CLASSES
 if st.session_state.page == "home":
-    st.header("📅 आज की कक्षाएं / Today's Schedule")
+    st.header("📅 Today's Schedule")
     
     today = datetime.now().strftime("%A")
     today_date = date.today()
@@ -214,14 +214,14 @@ if st.session_state.page == "home":
     today_students = get_students_for_day(today, today_date)
     
     if today_students:
-        st.subheader(f"कुल {len(today_students)} कक्षाएं / Total {len(today_students)} Classes")
+        st.subheader(f"Total {len(today_students)} Classes Today")
         
         for student in today_students:
             # Card-like container for each student
             with st.container():
                 st.markdown(f"### 👨‍🎓 {student['name']}")
-                st.markdown(f"**कक्षा / Grade:** {student['grade']}")
-                st.markdown(f"**विषय / Subject:** {student['subject']}")
+                st.markdown(f"**Grade:** {student['grade']}")
+                st.markdown(f"**Subject:** {student['subject']}")
                 
                 # Check if rescheduled
                 reschedule = next(
@@ -231,20 +231,20 @@ if st.session_state.page == "home":
                 )
                 
                 if reschedule:
-                    st.markdown(f"**समय / Time:** {reschedule['new_time']} 🔄")
-                    st.warning(f"स्थगित / Rescheduled from {reschedule['original_date']}")
+                    st.markdown(f"**Time:** {reschedule['new_time']} 🔄")
+                    st.warning(f"Rescheduled from {reschedule['original_date']}")
                 else:
-                    st.markdown(f"**समय / Time:** {student['time_slot']}")
+                    st.markdown(f"**Time:** {student['time_slot']}")
                 
-                st.markdown(f"**फीस / Fee:** ₹{student['monthly_fee']}")
+                st.markdown(f"**Fee:** ₹{student['monthly_fee']}")
                 
                 st.markdown("---")
     else:
-        st.success("🎉 आज कोई कक्षा नहीं / No classes today!")
+        st.success("🎉 No classes today!")
     
     # Quick stats
     st.markdown("---")
-    st.subheader("📊 इस महीने / This Month")
+    st.subheader("📊 This Month")
     
     current_month = datetime.now().month
     current_year = datetime.now().year
@@ -252,7 +252,7 @@ if st.session_state.page == "home":
     col1, col2 = st.columns(2)
     with col1:
         total_students = len(st.session_state.students)
-        st.metric("कुल छात्र\nTotal Students", total_students)
+        st.metric("Total Students", total_students)
     
     with col2:
         monthly_earnings = sum(
@@ -260,46 +260,45 @@ if st.session_state.page == "home":
             for s in st.session_state.students 
             if check_fee_status(s, current_month, current_year)
         )
-        st.metric("मिली फीस\nFees Received", f"₹{monthly_earnings:,.0f}")
+        st.metric("Fees Received", f"₹{monthly_earnings:,.0f}")
 
 # ADD STUDENT
 elif st.session_state.page == "add_student":
-    st.header("➕ नया छात्र जोड़ें / Add New Student")
+    st.header("➕ Add New Student")
     
     with st.form("student_form", clear_on_submit=True):
-        st.subheader("छात्र की जानकारी / Student Details")
+        st.subheader("Student Details")
         
-        name = st.text_input("नाम / Name *", placeholder="उदाहरण: Rahul Sharma")
+        name = st.text_input("Name *", placeholder="Example: Rahul Sharma")
         
-        grade = st.text_input("कक्षा / Grade *", placeholder="उदाहरण: 8th, 10th")
+        grade = st.text_input("Grade *", placeholder="Example: 8th, 10th")
         
-        subject = st.text_input("विषय / Subject *", placeholder="उदाहरण: Math, Science")
+        subject = st.text_input("Subject *", placeholder="Example: Math, Science")
         
-        time_slot = st.text_input("समय / Time *", placeholder="उदाहरण: 4:00 PM - 5:00 PM")
+        time_slot = st.text_input("Time *", placeholder="Example: 4:00 PM - 5:00 PM")
         
-        monthly_fee = st.number_input("महीने की फीस / Monthly Fee (₹) *", min_value=0, step=100, value=0)
+        monthly_fee = st.number_input("Monthly Fee (₹) *", min_value=0, step=100, value=0)
         
-        contact = st.text_input("फोन नंबर / Phone (Optional)", placeholder="उदाहरण: 9876543210")
+        contact = st.text_input("Phone Number (Optional)", placeholder="Example: 9876543210")
         
         st.markdown("---")
-        st.subheader("कौन से दिन? / Which Days? *")
-        st.caption("जिन दिन कक्षा है उन्हें चुनें / Select class days")
+        st.subheader("Which Days? *")
+        st.caption("Select the days when class is scheduled")
         
         days = []
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        day_hindi = ['सोमवार', 'मंगलवार', 'बुधवार', 'गुरुवार', 'शुक्रवार', 'शनिवार', 'रविवार']
         
-        for i, (day, hindi) in enumerate(zip(day_names, day_hindi)):
-            if st.checkbox(f"{hindi} / {day}", key=f"day_{day}"):
+        for day in day_names:
+            if st.checkbox(f"{day}", key=f"day_{day}"):
                 days.append(day)
         
         st.markdown("---")
         
         col1, col2 = st.columns(2)
         with col1:
-            submitted = st.form_submit_button("✅ जोड़ें / Add Student", use_container_width=True)
+            submitted = st.form_submit_button("✅ Add Student", use_container_width=True)
         with col2:
-            cancelled = st.form_submit_button("❌ रद्द करें / Cancel", use_container_width=True)
+            cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
         
         if cancelled:
             st.session_state.page = "home"
@@ -320,19 +319,19 @@ elif st.session_state.page == "add_student":
                 }
                 st.session_state.students.append(new_student)
                 save_data()
-                st.success(f"✅ {name} को जोड़ा गया! / {name} added successfully!")
+                st.success(f"✅ {name} added successfully!")
                 st.balloons()
-                if st.button("🏠 होम पर जाएं / Go to Home"):
+                if st.button("🏠 Go to Home"):
                     st.session_state.page = "home"
                     st.rerun()
             else:
-                st.error("⚠️ कृपया सभी जानकारी भरें! / Please fill all required fields!")
+                st.error("⚠️ Please fill all required fields!")
 
 # ATTENDANCE
 elif st.session_state.page == "attendance":
-    st.header("✅ हाजिरी / Attendance")
+    st.header("✅ Attendance")
     
-    selected_date = st.date_input("तारीख चुनें / Select Date", value=date.today())
+    selected_date = st.date_input("Select Date", value=date.today())
     day_name = selected_date.strftime("%A")
     
     st.info(f"📆 {selected_date.strftime('%d %B %Y')} ({day_name})")
@@ -340,13 +339,13 @@ elif st.session_state.page == "attendance":
     scheduled_students = get_students_for_day(day_name, selected_date)
     
     if scheduled_students:
-        st.subheader(f"कुल {len(scheduled_students)} छात्र / Total {len(scheduled_students)} Students")
+        st.subheader(f"Total {len(scheduled_students)} Students")
         
         for student in scheduled_students:
             with st.container():
                 st.markdown(f"### 👨‍🎓 {student['name']}")
-                st.markdown(f"**कक्षा / Grade:** {student['grade']}")
-                st.markdown(f"**विषय / Subject:** {student['subject']}")
+                st.markdown(f"**Grade:** {student['grade']}")
+                st.markdown(f"**Subject:** {student['subject']}")
                 
                 # Check if rescheduled
                 reschedule = next(
@@ -356,9 +355,9 @@ elif st.session_state.page == "attendance":
                 )
                 
                 if reschedule:
-                    st.markdown(f"**समय / Time:** {reschedule['new_time']} 🔄")
+                    st.markdown(f"**Time:** {reschedule['new_time']} 🔄")
                 else:
-                    st.markdown(f"**समय / Time:** {student['time_slot']}")
+                    st.markdown(f"**Time:** {student['time_slot']}")
                 
                 # Check existing attendance
                 existing_attendance = next(
@@ -374,7 +373,7 @@ elif st.session_state.page == "attendance":
                 
                 with col1:
                     present_type = "primary" if current_status == "present" else "secondary"
-                    if st.button(f"✅ उपस्थित\nPresent", 
+                    if st.button(f"✅ Present", 
                                 key=f"present_{student['id']}_{selected_date}",
                                 type=present_type,
                                 use_container_width=True):
@@ -396,7 +395,7 @@ elif st.session_state.page == "attendance":
                 
                 with col2:
                     absent_type = "primary" if current_status == "absent" else "secondary"
-                    if st.button(f"❌ अनुपस्थित\nAbsent",
+                    if st.button(f"❌ Absent",
                                 key=f"absent_{student['id']}_{selected_date}",
                                 type=absent_type,
                                 use_container_width=True):
@@ -417,17 +416,17 @@ elif st.session_state.page == "attendance":
                         st.rerun()
                 
                 if current_status == "present":
-                    st.success("✅ उपस्थित / Present")
+                    st.success("✅ Present")
                 elif current_status == "absent":
-                    st.error("❌ अनुपस्थित / Absent")
+                    st.error("❌ Absent")
                 
                 st.markdown("---")
     else:
-        st.info("इस दिन कोई कक्षा नहीं / No classes on this day")
+        st.info("No classes on this day")
 
 # FEES
 elif st.session_state.page == "fees":
-    st.header("💰 फीस / Fees")
+    st.header("💰 Fees")
     
     current_month = datetime.now().month
     current_year = datetime.now().year
@@ -448,11 +447,11 @@ elif st.session_state.page == "fees":
         # Show summary
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("कुल\nTotal", f"₹{total_expected:,.0f}")
+            st.metric("Total", f"₹{total_expected:,.0f}")
         with col2:
-            st.metric("मिली\nReceived", f"₹{total_received:,.0f}")
+            st.metric("Received", f"₹{total_received:,.0f}")
         with col3:
-            st.metric("बाकी\nPending", f"₹{total_pending:,.0f}")
+            st.metric("Pending", f"₹{total_pending:,.0f}")
         
         st.markdown("---")
         
@@ -460,17 +459,17 @@ elif st.session_state.page == "fees":
         for student in st.session_state.students:
             with st.container():
                 st.markdown(f"### 👨‍🎓 {student['name']}")
-                st.markdown(f"**कक्षा / Grade:** {student['grade']}")
-                st.markdown(f"**महीने की फीस / Monthly Fee:** ₹{student['monthly_fee']}")
+                st.markdown(f"**Grade:** {student['grade']}")
+                st.markdown(f"**Monthly Fee:** ₹{student['monthly_fee']}")
                 
                 is_paid = check_fee_status(student, current_month, current_year)
                 
                 if is_paid:
-                    st.success("✅ फीस मिल गई / Fee Received")
+                    st.success("✅ Fee Received")
                 else:
-                    st.error("❌ फीस बाकी है / Fee Pending")
+                    st.error("❌ Fee Pending")
                     
-                    if st.button(f"💰 फीस मिली / Mark Paid", 
+                    if st.button(f"💰 Mark Paid", 
                                 key=f"pay_{student['id']}",
                                 use_container_width=True):
                         if 'fees_paid' not in student:
@@ -482,25 +481,25 @@ elif st.session_state.page == "fees":
                             'amount': student['monthly_fee']
                         })
                         save_data()
-                        st.success("✅ फीस मिल गई! / Fee marked as paid!")
+                        st.success("✅ Fee marked as paid!")
                         st.rerun()
                 
                 st.markdown("---")
     else:
-        st.info("कोई छात्र नहीं / No students added yet")
+        st.info("No students added yet")
 
 # RESCHEDULE
 elif st.session_state.page == "reschedule":
-    st.header("🔄 क्लास बदलें / Reschedule Class")
+    st.header("🔄 Reschedule Class")
     
     if st.session_state.students:
         with st.form("reschedule_form", clear_on_submit=True):
-            st.subheader("छात्र चुनें / Select Student")
+            st.subheader("Select Student")
             
             # Create simple dropdown with student names
             student_names = [f"{s['name']} - {s['grade']}" for s in st.session_state.students]
             selected_index = st.selectbox(
-                "छात्र / Student *",
+                "Student *",
                 range(len(student_names)),
                 format_func=lambda x: student_names[x]
             )
@@ -508,40 +507,40 @@ elif st.session_state.page == "reschedule":
             student = st.session_state.students[selected_index]
             
             # Show regular schedule
-            st.info(f"नियमित दिन / Regular Days: {', '.join(student['days'])}\n\nसमय / Time: {student['time_slot']}")
+            st.info(f"Regular Days: {', '.join(student['days'])}\n\nTime: {student['time_slot']}")
             
             st.markdown("---")
-            st.subheader("तारीख चुनें / Select Dates")
+            st.subheader("Select Dates")
             
             original_date = st.date_input(
-                "पुरानी तारीख / Original Date *",
+                "Original Date *",
                 min_value=date.today(),
-                help="जिस दिन की कक्षा बदलनी है / The date to reschedule from"
+                help="The date to reschedule from"
             )
             
             new_date = st.date_input(
-                "नई तारीख / New Date *",
+                "New Date *",
                 min_value=date.today(),
-                help="जिस दिन कक्षा करनी है / The new date for the class"
+                help="The new date for the class"
             )
             
             new_time = st.text_input(
-                "नया समय / New Time (Optional)",
-                placeholder="खाली छोड़ें या नया समय डालें / Leave empty or enter new time"
+                "New Time (Optional)",
+                placeholder="Leave empty or enter new time"
             )
             
             reason = st.text_area(
-                "कारण / Reason (Optional)",
-                placeholder="उदाहरण: छुट्टी, बीमार, etc."
+                "Reason (Optional)",
+                placeholder="Example: Holiday, Student sick, etc."
             )
             
             st.markdown("---")
             
             col1, col2 = st.columns(2)
             with col1:
-                submitted = st.form_submit_button("✅ बदलें / Reschedule", use_container_width=True)
+                submitted = st.form_submit_button("✅ Reschedule", use_container_width=True)
             with col2:
-                cancelled = st.form_submit_button("❌ रद्द करें / Cancel", use_container_width=True)
+                cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
             
             if cancelled:
                 st.session_state.page = "home"
@@ -562,55 +561,55 @@ elif st.session_state.page == "reschedule":
                     }
                     st.session_state.reschedules.append(new_reschedule)
                     save_data()
-                    st.success(f"✅ कक्षा बदल दी गई! / Class rescheduled!")
+                    st.success(f"✅ Class rescheduled!")
                     st.balloons()
-                    if st.button("🏠 होम पर जाएं / Go to Home"):
+                    if st.button("🏠 Go to Home"):
                         st.session_state.page = "home"
                         st.rerun()
     else:
-        st.info("पहले छात्र जोड़ें / Add students first")
-        if st.button("➕ छात्र जोड़ें / Add Student"):
+        st.info("Add students first")
+        if st.button("➕ Add Student"):
             st.session_state.page = "add_student"
             st.rerun()
 
 # ALL STUDENTS
 elif st.session_state.page == "students":
-    st.header("📋 सभी छात्र / All Students")
+    st.header("📋 All Students")
     
     if st.session_state.students:
-        st.subheader(f"कुल {len(st.session_state.students)} छात्र / Total {len(st.session_state.students)} Students")
+        st.subheader(f"Total {len(st.session_state.students)} Students")
         
         for idx, student in enumerate(st.session_state.students):
             with st.container():
                 st.markdown(f"### 👨‍🎓 {student['name']}")
-                st.markdown(f"**कक्षा / Grade:** {student['grade']}")
-                st.markdown(f"**विषय / Subject:** {student['subject']}")
-                st.markdown(f"**दिन / Days:** {', '.join(student['days'])}")
-                st.markdown(f"**समय / Time:** {student['time_slot']}")
-                st.markdown(f"**महीने की फीस / Monthly Fee:** ₹{student['monthly_fee']}")
+                st.markdown(f"**Grade:** {student['grade']}")
+                st.markdown(f"**Subject:** {student['subject']}")
+                st.markdown(f"**Days:** {', '.join(student['days'])}")
+                st.markdown(f"**Time:** {student['time_slot']}")
+                st.markdown(f"**Monthly Fee:** ₹{student['monthly_fee']}")
                 if student['contact']:
-                    st.markdown(f"**फोन / Phone:** {student['contact']}")
+                    st.markdown(f"**Phone:** {student['contact']}")
                 
-                if st.button(f"🗑️ हटाएं / Delete {student['name']}", 
+                if st.button(f"🗑️ Delete {student['name']}", 
                            key=f"del_{student['id']}",
                            use_container_width=True):
-                    if st.button(f"⚠️ पक्का हटाएं? / Confirm Delete?", 
+                    if st.button(f"⚠️ Confirm Delete?", 
                                key=f"confirm_del_{student['id']}",
                                type="primary",
                                use_container_width=True):
                         st.session_state.students.pop(idx)
                         save_data()
-                        st.success("✅ छात्र हटाया गया! / Student deleted!")
+                        st.success("✅ Student deleted!")
                         st.rerun()
                 
                 st.markdown("---")
     else:
-        st.info("कोई छात्र नहीं / No students added yet")
-        if st.button("➕ छात्र जोड़ें / Add Student"):
+        st.info("No students added yet")
+        if st.button("➕ Add Student"):
             st.session_state.page = "add_student"
             st.rerun()
 
 # Footer
 st.markdown("---")
-st.caption("💾 सभी जानकारी अपने आप सेव होती है / All data is automatically saved")
+st.caption("💾 All data is automatically saved")
 st.caption("Made with ❤️ for Mom")
