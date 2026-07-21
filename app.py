@@ -73,6 +73,35 @@ input, textarea, select {
     box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 }
 
+/* ── day-of-week header pill for weekly view ── */
+.day-header {
+    background: #FF6B35;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    margin: 18px 0 8px 0;
+}
+.day-header-empty {
+    background: #f1f3f5;
+    color: #868e96;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    margin: 18px 0 8px 0;
+}
+.day-today-tag {
+    background: #ffe8dc;
+    color: #FF6B35;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: 8px;
+}
+
 /* ── status pills ── */
 .pill-green  { background:#d4edda; color:#155724; padding:3px 10px; border-radius:20px; font-size:13px; font-weight:600; }
 .pill-red    { background:#f8d7da; color:#721c24; padding:3px 10px; border-radius:20px; font-size:13px; font-weight:600; }
@@ -117,23 +146,28 @@ def load_from_gist():
         if r.status_code == 200:
             content = r.json()["files"].get(GIST_FILENAME, {}).get("content", "{}")
             return json.loads(content)
-    except Exception:
-        pass
+        else:
+            st.session_state["_load_error"] = f"Could not load saved data (error {r.status_code}). Your existing data is safe — this app just couldn't fetch it right now."
+    except Exception as e:
+        st.session_state["_load_error"] = f"Could not load saved data ({e}). Your existing data is safe — this app just couldn't fetch it right now."
     return {}
 
 def save_to_gist(data: dict):
     """Save all app data to GitHub Gist."""
     gist_id = st.secrets.get("GIST_ID", "")
     if not gist_id:
-        st.warning("⚠️ Storage not configured. Data will be lost on refresh. See setup guide below.", icon="⚠️")
+        st.warning("⚠️ Saving is not set up yet. Changes will be lost when the app restarts. See the setup guide at the bottom of the page.", icon="⚠️")
         return False
     try:
         payload = {"files": {GIST_FILENAME: {"content": json.dumps(data, indent=2)}}}
         r = requests.patch(f"https://api.github.com/gists/{gist_id}",
                            headers=_gist_headers(), json=payload, timeout=8)
-        return r.status_code == 200
+        if r.status_code != 200:
+            st.error(f"⚠️ Could not save your changes (error {r.status_code}). Please try again — do not close the app until you see a success message.")
+            return False
+        return True
     except Exception as e:
-        st.error(f"Save error: {e}")
+        st.error(f"⚠️ Could not save your changes: {e}. Please try again.")
         return False
 
 def get_all_data():
@@ -141,10 +175,13 @@ def get_all_data():
         "students": st.session_state.students,
         "attendance": st.session_state.attendance,
         "reschedules": st.session_state.reschedules,
+        "next_reschedule_id": st.session_state.next_reschedule_id,
     }
 
 def save_data():
-    save_to_gist(get_all_data())
+    ok = save_to_gist(get_all_data())
+    st.session_state["_last_save_ok"] = ok
+    return ok
 
 
 # ─────────────────────────────────────────────
@@ -155,12 +192,24 @@ if "data_loaded" not in st.session_state:
     st.session_state.students   = data.get("students",   [])
     st.session_state.attendance = data.get("attendance", [])
     st.session_state.reschedules= data.get("reschedules",[])
+    # BUGFIX: reschedules used to reuse next_student_id(), which could
+    # collide/duplicate after a student was deleted. They now have their
+    # own independent counter, persisted across sessions.
+    st.session_state.next_reschedule_id = data.get(
+        "next_reschedule_id",
+        (max((r.get("id", 0) for r in data.get("reschedules", [])), default=0) + 1)
+    )
     st.session_state.data_loaded = True
 
 if "page"          not in st.session_state: st.session_state.page = "home"
 if "selected_days" not in st.session_state: st.session_state.selected_days = {}
 if "edit_student"  not in st.session_state: st.session_state.edit_student = None
 if "confirm_delete"not in st.session_state: st.session_state.confirm_delete = None
+if "schedule_focus_day" not in st.session_state: st.session_state.schedule_focus_day = None
+
+if st.session_state.get("_load_error"):
+    st.error(st.session_state["_load_error"])
+    del st.session_state["_load_error"]
 
 
 # ─────────────────────────────────────────────
@@ -192,17 +241,33 @@ def get_students_for_day(day_name, check_date=None):
         }
         base = [s for s in base if s["id"] not in rescheduled_away]
 
+        existing_ids = {s["id"] for s in base}
         extra_ids = {
             r["student_id"]
             for r in st.session_state.reschedules
             if r["new_date"] == date_str and r["status"] == "active"
         }
         for sid in extra_ids:
+            if sid in existing_ids:
+                continue
             s = next((x for x in st.session_state.students if x["id"] == sid), None)
-            if s and s not in base:
+            if s:
                 base.append(s)
+                existing_ids.add(sid)
 
     return base
+
+def get_all_students_for_weekday(day_name):
+    """Return students on their REGULAR weekly schedule for a weekday name,
+    ignoring one-off reschedules. Used for the always-visible weekly view."""
+    result = []
+    for s in st.session_state.students:
+        ts = s.get("time_slot", {})
+        days = list(ts.keys()) if isinstance(ts, dict) else s.get("days", [])
+        if day_name in days:
+            result.append(s)
+    # sort by time where possible, fall back to name
+    return sorted(result, key=lambda s: (get_time_for_day(s, day_name) or "", s["name"]))
 
 def check_fee_status(student, month, year):
     return any(p["month"] == month and p["year"] == year for p in student.get("fees_paid", []))
@@ -211,6 +276,14 @@ def next_student_id():
     if not st.session_state.students:
         return 1
     return max(s["id"] for s in st.session_state.students) + 1
+
+def next_reschedule_id():
+    # BUGFIX: independent, monotonically increasing counter stored in
+    # session/gist — no longer derived from student IDs, so it can never
+    # collide even after students are deleted.
+    rid = st.session_state.next_reschedule_id
+    st.session_state.next_reschedule_id += 1
+    return rid
 
 def go(page):
     st.session_state.page = page
@@ -244,6 +317,7 @@ st.markdown("## 📚 Tuition Tracker")
 
 pages = [
     ("🏠", "Today",     "home"),
+    ("📅", "Schedule",  "schedule"),
     ("👥", "Students",  "students"),
     ("✅", "Attendance","attendance"),
     ("💰", "Fees",      "fees"),
@@ -289,7 +363,7 @@ if st.session_state.page == "home":
     st.markdown("---")
 
     if today_students:
-        st.markdown(f"**{len(today_students)} class{'es' if len(today_students)>1 else ''} scheduled**")
+        st.markdown(f"**{len(today_students)} class{'es' if len(today_students)>1 else ''} scheduled today**")
         for student in today_students:
             reschedule = next(
                 (r for r in st.session_state.reschedules
@@ -306,7 +380,7 @@ if st.session_state.page == "home":
                 c1.write(f"**Subject:** {student['subject']}")
                 c2.write(f"**Fee:** ₹{student['monthly_fee']}")
                 if reschedule:
-                    st.info(f"🔄 Rescheduled from {reschedule['original_date']}")
+                    st.info(f"🔄 Moved here from {reschedule['original_date']}")
 
                 if att_status == "present":
                     st.success("✅ Marked Present")
@@ -325,13 +399,85 @@ if st.session_state.page == "home":
 
     # ── upcoming week preview ──
     st.markdown("---")
-    st.subheader("📆 Upcoming Week")
+    st.subheader("📆 Coming Up This Week")
+    any_upcoming = False
     for i in range(1, 7):
         upcoming = today_date + timedelta(days=i)
         up_name  = upcoming.strftime("%A")
         up_count = len(get_students_for_day(up_name, upcoming))
         if up_count:
+            any_upcoming = True
             st.write(f"**{upcoming.strftime('%a %d %b')}** — {up_count} class{'es' if up_count>1 else ''}")
+    if not any_upcoming:
+        st.caption("No more classes scheduled for the rest of this week.")
+
+    st.info("👉 Want to see every student and every class, for any day of the week? Go to the **📅 Schedule** tab above.")
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE: SCHEDULE — full weekly view, always visible, any day
+# ════════════════════════════════════════════════════════════
+elif st.session_state.page == "schedule":
+    st.subheader("📅 Weekly Class Schedule")
+    st.caption("This shows every student's regular weekly classes — not just today. Tap a day below to jump straight to it.")
+
+    today_name = date.today().strftime("%A")
+
+    # ── quick jump buttons: one per day ──
+    st.markdown("**Jump to a day:**")
+    day_cols = st.columns(7)
+    for col, day in zip(day_cols, DAY_NAMES):
+        with col:
+            is_focus = st.session_state.schedule_focus_day == day
+            label = day[:3] + (" •" if day == today_name else "")
+            if st.button(label, key=f"jump_{day}", type=("primary" if is_focus else "secondary"),
+                         use_container_width=True):
+                st.session_state.schedule_focus_day = None if is_focus else day
+                st.rerun()
+
+    if st.session_state.schedule_focus_day:
+        st.caption(f"Showing only **{st.session_state.schedule_focus_day}**. Tap it again above to see the full week.")
+
+    st.markdown("---")
+
+    total_weekly_classes = 0
+    days_to_show = [st.session_state.schedule_focus_day] if st.session_state.schedule_focus_day else DAY_NAMES
+
+    for day in days_to_show:
+        students_that_day = get_all_students_for_weekday(day)
+        total_weekly_classes += len(students_that_day)
+        is_today = (day == today_name)
+
+        header_class = "day-header" if students_that_day else "day-header-empty"
+        today_tag = '<span class="day-today-tag">TODAY</span>' if is_today else ""
+        count_text = f"{len(students_that_day)} class{'es' if len(students_that_day) != 1 else ''}" if students_that_day else "No classes"
+        st.markdown(
+            f'<div class="{header_class}">{day} — {count_text}{today_tag}</div>',
+            unsafe_allow_html=True
+        )
+
+        if not students_that_day:
+            st.caption("Nothing scheduled on this day.")
+            continue
+
+        for student in students_that_day:
+            time_display = get_time_for_day(student, day)
+            with st.container():
+                c1, c2, c3 = st.columns([2.2, 1.3, 1])
+                with c1:
+                    st.markdown(f"**👤 {student['name']}**")
+                    st.caption(f"{student['grade']} • {student['subject']}")
+                with c2:
+                    st.write(f"🕐 {time_display}")
+                with c3:
+                    st.write(f"₹{student['monthly_fee']}")
+            st.markdown("<hr style='margin:4px 0; border-color:#eee;'>", unsafe_allow_html=True)
+
+    if not st.session_state.schedule_focus_day:
+        st.markdown("---")
+        st.info(f"📊 **{total_weekly_classes} classes** happen every week across all students.")
+
+    st.caption("Note: this view shows the regular weekly plan. If a class was moved to a different date, check the 🔄 Reschedule tab for the latest date and time.")
 
 
 # ════════════════════════════════════════════════════════════
@@ -375,9 +521,10 @@ elif st.session_state.page == "students":
 
                 ts = student.get("time_slot", {})
                 if isinstance(ts, dict) and ts:
-                    c2.write("**Schedule:**")
-                    for day, time in ts.items():
-                        c2.caption(f"• {day}: {time}")
+                    c2.write("**Weekly Schedule:**")
+                    for day in DAY_NAMES:
+                        if day in ts:
+                            c2.caption(f"• {day}: {ts[day]}")
 
                 bc1, bc2 = st.columns(2)
                 with bc1:
@@ -393,7 +540,8 @@ elif st.session_state.page == "students":
 
                 # ── confirm delete (no nested buttons!) ──
                 if st.session_state.confirm_delete == student["id"]:
-                    st.warning(f"⚠️ Delete **{student['name']}**? This cannot be undone.")
+                    st.warning(f"⚠️ Are you sure you want to delete **{student['name']}**? "
+                               f"This will also remove their attendance history and reschedules. This cannot be undone.")
                     cc1, cc2 = st.columns(2)
                     with cc1:
                         if st.button("✅ Yes, Delete", key=f"yes_del_{student['id']}", type="primary", use_container_width=True):
@@ -417,6 +565,7 @@ elif st.session_state.page == "students":
 elif st.session_state.page == "add_student":
     editing = st.session_state.edit_student is not None
     st.subheader("✏️ Edit Student" if editing else "➕ Add New Student")
+    st.caption("Fields marked * are required.")
 
     existing = st.session_state.edit_student or {}
 
@@ -429,8 +578,8 @@ elif st.session_state.page == "add_student":
                              placeholder="e.g. 9876543210")
 
     st.markdown("---")
-    st.markdown("**📅 Class Days & Times**")
-    st.caption("Tap a day to select/deselect it, then enter the time.")
+    st.markdown("**📅 Which days does this student have class, and at what time?**")
+    st.caption("Tap a day to turn it on or off. When a day is on, type the class time next to it.")
 
     for day in DAY_NAMES:
         is_sel = day in st.session_state.selected_days
@@ -463,11 +612,14 @@ elif st.session_state.page == "add_student":
         if st.button(btn_label, type="primary", use_container_width=True):
             schedule = {d: t for d, t in st.session_state.selected_days.items() if t.strip()}
             errors = []
-            if not name.strip():   errors.append("Name is required")
-            if not grade.strip():  errors.append("Grade is required")
-            if not subject.strip():errors.append("Subject is required")
-            if fee <= 0:           errors.append("Monthly fee must be > 0")
-            if not schedule:       errors.append("Select at least one day with a time")
+            if not name.strip():   errors.append("Please enter the student's name")
+            if not grade.strip():  errors.append("Please enter the grade / standard")
+            if not subject.strip():errors.append("Please enter the subject")
+            if fee <= 0:           errors.append("Monthly fee must be more than ₹0")
+            selected_but_no_time = [d for d, t in st.session_state.selected_days.items() if not t.strip()]
+            if selected_but_no_time:
+                errors.append(f"Please enter a class time for: {', '.join(selected_but_no_time)} (or turn that day off)")
+            if not schedule:       errors.append("Please select at least one class day with a time")
 
             if errors:
                 for e in errors:
@@ -497,13 +649,15 @@ elif st.session_state.page == "add_student":
                     })
                     msg = f"✅ {name} added!"
 
-                save_data()
-                st.session_state.selected_days = {}
-                st.session_state.edit_student  = None
-                st.success(msg)
-                st.balloons()
-                st.session_state.page = "students"
-                st.rerun()
+                if save_data():
+                    st.session_state.selected_days = {}
+                    st.session_state.edit_student  = None
+                    st.success(msg)
+                    st.balloons()
+                    st.session_state.page = "students"
+                    st.rerun()
+                else:
+                    st.error("⚠️ Your student was NOT saved because of a connection problem. Please check your internet and try again.")
 
     with c2:
         if st.button("❌ Cancel", use_container_width=True):
@@ -558,7 +712,7 @@ elif st.session_state.page == "attendance":
             ):
                 st.write(f"**Grade:** {student['grade']} | **Subject:** {student['subject']}")
                 if reschedule:
-                    st.info(f"🔄 Rescheduled from {reschedule['original_date']}")
+                    st.info(f"🔄 Moved here from {reschedule['original_date']}")
 
                 bc1, bc2 = st.columns(2)
                 with bc1:
@@ -619,11 +773,17 @@ elif st.session_state.page == "fees":
         st.markdown(f"### {calendar.month_name[sel_month]} {sel_year}")
 
         total_exp = sum(float(s["monthly_fee"]) for s in st.session_state.students)
-        total_rec = sum(
-            float(s["monthly_fee"])
-            for s in st.session_state.students
-            if check_fee_status(s, sel_month, sel_year)
-        )
+        # BUGFIX: "Received" now sums the actual amount recorded at the time
+        # of payment, not the student's CURRENT monthly fee. This keeps past
+        # months' totals accurate even if a fee amount is changed later.
+        total_rec = 0.0
+        for s in st.session_state.students:
+            payment = next(
+                (p for p in s.get("fees_paid", []) if p["month"] == sel_month and p["year"] == sel_year),
+                None
+            )
+            if payment:
+                total_rec += float(payment.get("amount", s["monthly_fee"]))
         total_pen = total_exp - total_rec
 
         m1, m2, m3 = st.columns(3)
@@ -653,9 +813,12 @@ elif st.session_state.page == "fees":
                             "date":   datetime.now().isoformat(),
                             "amount": student["monthly_fee"]
                         })
-                        save_data()
-                        st.success(f"✅ ₹{student['monthly_fee']} received from {student['name']}")
-                        st.rerun()
+                        if save_data():
+                            st.success(f"✅ ₹{student['monthly_fee']} received from {student['name']}")
+                            st.rerun()
+                        else:
+                            student["fees_paid"].pop()
+                            st.error("⚠️ Could not save this payment. Please try again.")
 
         with tab_paid:
             paid = [s for s in st.session_state.students if check_fee_status(s, sel_month, sel_year)]
@@ -667,7 +830,8 @@ elif st.session_state.page == "fees":
                      if p["month"] == sel_month and p["year"] == sel_year), {}
                 )
                 paid_on = payment.get("date", "")[:10] if payment else ""
-                with st.expander(f"✅ {student['name']} — ₹{student['monthly_fee']}"):
+                paid_amount = payment.get("amount", student["monthly_fee"])
+                with st.expander(f"✅ {student['name']} — ₹{paid_amount}"):
                     st.write(f"**Grade:** {student['grade']} | **Subject:** {student['subject']}")
                     if paid_on:
                         st.caption(f"Paid on: {paid_on}")
@@ -688,6 +852,7 @@ elif st.session_state.page == "fees":
 # ════════════════════════════════════════════════════════════
 elif st.session_state.page == "reschedule":
     st.subheader("🔄 Reschedule a Class")
+    st.caption("Use this when a class needs to move to a different date — for a holiday, sick day, etc.")
 
     if not st.session_state.students:
         st.info("Add students first.")
@@ -723,7 +888,10 @@ elif st.session_state.page == "reschedule":
                         orig_day_name  = original_date.strftime("%A")
                         default_time   = get_time_for_day(student, orig_day_name)
                         st.session_state.reschedules.append({
-                            "id":            next_student_id() + len(st.session_state.reschedules),
+                            # BUGFIX: was next_student_id() + len(reschedules), which
+                            # could produce duplicate IDs after a student was deleted.
+                            # Now uses its own independent, persisted counter.
+                            "id":            next_reschedule_id(),
                             "student_id":    student["id"],
                             "student_name":  student["name"],
                             "original_date": str(original_date),
@@ -733,9 +901,12 @@ elif st.session_state.page == "reschedule":
                             "status":        "active",
                             "created_at":    datetime.now().isoformat()
                         })
-                        save_data()
-                        st.success(f"✅ {student['name']}'s class rescheduled to {new_date.strftime('%d %b %Y')}!")
-                        st.balloons()
+                        if save_data():
+                            st.success(f"✅ {student['name']}'s class moved to {new_date.strftime('%d %b %Y')}!")
+                            st.balloons()
+                        else:
+                            st.session_state.reschedules.pop()
+                            st.error("⚠️ Could not save this change. Please try again.")
             with c2:
                 if st.button("❌ Cancel", use_container_width=True):
                     go("home")
@@ -762,8 +933,8 @@ elif st.session_state.page == "reschedule":
 # SETUP GUIDE (shown when secrets not configured)
 # ════════════════════════════════════════════════════════════
 if not st.secrets.get("GIST_ID"):
-    with st.expander("⚙️ One-Time Setup: Enable Persistent Storage", expanded=False):
-        st.warning("Data is NOT being saved permanently yet. Follow these steps once:")
+    with st.expander("⚙️ One-Time Setup: Enable Permanent Saving", expanded=False):
+        st.warning("Your data is NOT being saved permanently yet. Follow these steps once:")
         st.markdown("""
 **Step 1 — Create a GitHub Gist**
 1. Go to [gist.github.com](https://gist.github.com)
@@ -789,7 +960,7 @@ GIST_ID      = "your_gist_id_here"
 ```
 4. Click **Save** and restart the app
 
-That's it! All data will now persist forever. ✅
+That's it! All data will now be saved automatically, forever. ✅
         """)
 
 # ── footer ──
